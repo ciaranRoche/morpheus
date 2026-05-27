@@ -1,6 +1,8 @@
 package converter
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
@@ -55,6 +57,69 @@ func TestTransformEnvVarSyntax(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestParseClaudeMCPConfig(t *testing.T) {
+	t.Run("envelope format with mcpServers key", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".mcp.json")
+		content := `{
+  "mcpServers": {
+    "writing-samples": {
+      "command": "mcp-server-qdrant",
+      "args": [],
+      "env": {"QDRANT_URL": "http://127.0.0.1:6333"}
+    },
+    "atlassian": {
+      "command": "uvx",
+      "args": ["mcp-atlassian"],
+      "env": {"TOKEN": "${MY_TOKEN}"}
+    }
+  }
+}`
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		servers, err := ParseClaudeMCPConfig(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(servers) != 2 {
+			t.Fatalf("expected 2 servers, got %d", len(servers))
+		}
+		if servers["writing-samples"].Command != "mcp-server-qdrant" {
+			t.Errorf("writing-samples command = %q, want %q", servers["writing-samples"].Command, "mcp-server-qdrant")
+		}
+		if servers["atlassian"].Command != "uvx" {
+			t.Errorf("atlassian command = %q, want %q", servers["atlassian"].Command, "uvx")
+		}
+	})
+
+	t.Run("flat format without mcpServers key", func(t *testing.T) {
+		dir := t.TempDir()
+		path := filepath.Join(dir, ".mcp.json")
+		content := `{
+  "my-server": {
+    "command": "node",
+    "args": ["server.js"]
+  }
+}`
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+
+		servers, err := ParseClaudeMCPConfig(path)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(servers) != 1 {
+			t.Fatalf("expected 1 server, got %d", len(servers))
+		}
+		if servers["my-server"].Command != "node" {
+			t.Errorf("command = %q, want %q", servers["my-server"].Command, "node")
+		}
+	})
 }
 
 func TestConvertMCPServer(t *testing.T) {
@@ -129,6 +194,22 @@ func TestConvertMCPServer(t *testing.T) {
 			wantType: "remote",
 			wantURL:  "https://example.com",
 		},
+		{
+			name:    "transforms environment env vars",
+			srvName: "jira-server",
+			input: ClaudeMCPServer{
+				Command: "uvx",
+				Args:    []string{"mcp-atlassian"},
+				Env: map[string]string{
+					"JIRA_USERNAME":  "${JIRA_USERNAME}",
+					"JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
+					"PLAIN_VALUE":    "no-vars-here",
+				},
+			},
+			wantType: "local",
+			wantCmd:  []string{"uvx", "mcp-atlassian"},
+			wantEnv:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -167,6 +248,19 @@ func TestConvertMCPServer(t *testing.T) {
 			if tt.input.Headers != nil && tt.input.Headers["Authorization"] == "Bearer ${TOKEN}" {
 				if got.Headers["Authorization"] != "Bearer {env:TOKEN}" {
 					t.Errorf("header not transformed: got %q", got.Headers["Authorization"])
+				}
+			}
+
+			// Check environment env var transformation
+			if tt.name == "transforms environment env vars" {
+				if got.Environment["JIRA_USERNAME"] != "{env:JIRA_USERNAME}" {
+					t.Errorf("JIRA_USERNAME not transformed: got %q", got.Environment["JIRA_USERNAME"])
+				}
+				if got.Environment["JIRA_API_TOKEN"] != "{env:JIRA_API_TOKEN}" {
+					t.Errorf("JIRA_API_TOKEN not transformed: got %q", got.Environment["JIRA_API_TOKEN"])
+				}
+				if got.Environment["PLAIN_VALUE"] != "no-vars-here" {
+					t.Errorf("PLAIN_VALUE changed unexpectedly: got %q", got.Environment["PLAIN_VALUE"])
 				}
 			}
 		})

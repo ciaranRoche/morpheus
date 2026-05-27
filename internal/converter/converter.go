@@ -74,7 +74,7 @@ func ConvertPlugin(plugin *marketplace.Plugin) []Result {
 		})
 	}
 
-	// Handle MCP servers (warn about manual config merge)
+	// Convert and merge MCP servers into opencode.json
 	for _, mcp := range plugin.MCPServers() {
 		servers, err := ParseClaudeMCPConfig(mcp.Path)
 		if err != nil {
@@ -88,13 +88,33 @@ func ConvertPlugin(plugin *marketplace.Plugin) []Result {
 			continue
 		}
 
-		for name := range servers {
+		// Convert each server to OpenCode format
+		converted := make(map[string]OpenCodeMCPServer)
+		for name, srv := range servers {
+			converted[name] = ConvertMCPServer(name, srv)
+		}
+
+		// Merge into opencode.json
+		names, err := MergeMCPServers(converted)
+		if err != nil {
+			for name := range converted {
+				results = append(results, Result{
+					ComponentType: marketplace.ComponentMCP,
+					Name:          name,
+					OriginalName:  name,
+					Success:       false,
+					Error:         fmt.Errorf("could not merge MCP server into opencode.json: %w", err),
+				})
+			}
+			continue
+		}
+
+		for _, name := range names {
 			results = append(results, Result{
 				ComponentType: marketplace.ComponentMCP,
 				Name:          name,
 				OriginalName:  name,
 				Success:       true,
-				Warning:       fmt.Sprintf("MCP server %q parsed -- add to opencode.json manually or run 'morpheus doctor'", name),
 			})
 		}
 	}
@@ -103,7 +123,7 @@ func ConvertPlugin(plugin *marketplace.Plugin) []Result {
 }
 
 // UninstallPlugin removes all tracked components of a plugin from OpenCode.
-func UninstallPlugin(commands, skills, agents []string) []Result {
+func UninstallPlugin(commands, skills, agents, mcpServers []string) []Result {
 	var results []Result
 
 	for _, name := range commands {
@@ -134,6 +154,28 @@ func UninstallPlugin(commands, skills, agents []string) []Result {
 			Success:       err == nil,
 			Error:         err,
 		})
+	}
+
+	if len(mcpServers) > 0 {
+		err := RemoveMCPServers(mcpServers)
+		if err != nil {
+			for _, name := range mcpServers {
+				results = append(results, Result{
+					ComponentType: marketplace.ComponentMCP,
+					Name:          name,
+					Success:       false,
+					Error:         err,
+				})
+			}
+		} else {
+			for _, name := range mcpServers {
+				results = append(results, Result{
+					ComponentType: marketplace.ComponentMCP,
+					Name:          name,
+					Success:       true,
+				})
+			}
+		}
 	}
 
 	return results

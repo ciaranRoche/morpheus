@@ -59,7 +59,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	results := converter.ConvertPlugin(foundPlugin)
 
 	// Display results
-	var commands, skills, agents []string
+	var commands, skills, agents, mcpServers []string
 	hasErrors := false
 
 	for _, r := range results {
@@ -93,6 +93,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 				skills = append(skills, r.Name)
 			case marketplace.ComponentAgent:
 				agents = append(agents, r.Name)
+			case marketplace.ComponentMCP:
+				mcpServers = append(mcpServers, r.Name)
 			}
 		}
 	}
@@ -111,6 +113,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 			Commands: commands,
 			Skills:   skills,
 			Agents:   agents,
+			MCP:      mcpServers,
 		},
 	}
 
@@ -125,8 +128,8 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Plugin %q installed successfully!\n", pluginName)
 	}
 
-	fmt.Printf("\nComponents installed: %d commands, %d skills, %d agents\n",
-		len(commands), len(skills), len(agents))
+	fmt.Printf("\nComponents installed: %d commands, %d skills, %d agents, %d mcp servers\n",
+		len(commands), len(skills), len(agents), len(mcpServers))
 
 	return nil
 }

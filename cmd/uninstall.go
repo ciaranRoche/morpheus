@@ -35,6 +35,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		plugin.Components.Commands,
 		plugin.Components.Skills,
 		plugin.Components.Agents,
+		plugin.Components.MCP,
 	)
 
 	for _, r := range results {
